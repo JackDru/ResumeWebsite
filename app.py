@@ -46,7 +46,7 @@ section[data-testid="stSidebar"] { display: none; }
 .elias-header {
     background: #111111;
     border-bottom: 2px solid #C41E3A;
-    padding: 16px 48px;
+    padding: 16px 120px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -75,7 +75,7 @@ section[data-testid="stSidebar"] { display: none; }
 .metric-bar {
     background: #111111;
     border-bottom: 1px solid #222;
-    padding: 16px 48px;
+    padding: 16px 120px;
     display: flex;
     gap: 48px;
     align-items: center;
@@ -112,7 +112,7 @@ section[data-testid="stSidebar"] { display: none; }
     background: #111111 !important;
     border-bottom: 1px solid #222 !important;
     gap: 0 !important;
-    padding: 0 48px !important;
+    padding: 0 120px !important;
 }
 
 .stTabs [data-baseweb="tab"] {
@@ -136,7 +136,7 @@ section[data-testid="stSidebar"] { display: none; }
 .stTabs [data-baseweb="tab-border"] { display: none !important; }
 
 /* ── Content ── */
-.content-area { padding: 32px 48px; }
+.content-area { padding: 32px 120px; }
 
 /* ── Week selector ── */
 .week-selector-wrap {
@@ -161,7 +161,7 @@ section[data-testid="stSidebar"] { display: none; }
 }
 
 .stSelectbox > div > div:hover {
-    border-color: #C41E3A !important;
+    border-color: #555 !important;
 }
 
 .stSelectbox label {
@@ -178,6 +178,17 @@ section[data-testid="stSidebar"] { display: none; }
     border: 1px solid #333 !important;
     border-radius: 2px !important;
     color: #E8E8E4 !important;
+}
+
+/* Fix multiselect tags - remove red background */
+.stMultiSelect span[data-baseweb="tag"] {
+    background-color: #2A2A2A !important;
+    color: #AAAAAA !important;
+    border: 1px solid #444 !important;
+}
+
+.stMultiSelect span[data-baseweb="tag"] span {
+    color: #AAAAAA !important;
 }
 
 .stMultiSelect label {
@@ -487,7 +498,6 @@ if not df.empty:
     featured    = len(df[df['featured'] == True]) if 'featured' in df.columns else 0
     avg_score   = round(df['insight_quality_score'].mean(), 1) if 'insight_quality_score' in df.columns else 0
     signal_rate = round((total / raw_count * 100), 1) if raw_count > 0 else 0
-    neg_count   = len(df[df['sentiment'] == 'negative']) if 'sentiment' in df.columns else 0
 
     st.markdown(f"""
     <div class="metric-bar">
@@ -514,11 +524,6 @@ if not df.empty:
         <div class="metric-item">
             <div class="metric-value">{signal_rate}%</div>
             <div class="metric-label">Signal Rate</div>
-        </div>
-        <div class="metric-divider"></div>
-        <div class="metric-item">
-            <div class="metric-value red">{neg_count}</div>
-            <div class="metric-label">Negative Flags</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -563,7 +568,6 @@ def render_card(row, rank=None):
 
     exp_tag  = f'<span class="tag tag-experience">{row.get("experience_tag","—")}</span>'
     cat_tag  = f'<span class="tag tag-category">{str(row.get("category_tag","—")).replace("_"," ").title()}</span>'
-    sent_tag = f'<span class="tag tag-sentiment-{sent_class}">{sent_class}</span>'
     feat_tag = '<span class="tag tag-featured">◆ Featured</span>' if row.get('featured') else ""
 
     proj_html = ""
@@ -630,7 +634,7 @@ def render_card(row, rank=None):
             {context_html}
             {quotes_html}
             <div class="insight-meta">
-                {exp_tag}{cat_tag}{sent_tag}{feat_tag}{proj_html}
+                {exp_tag}{cat_tag}{feat_tag}{proj_html}
                 {byline_html}
             </div>
         </div>
@@ -655,7 +659,7 @@ def render_card(row, rank=None):
             </div>
             {detail_html}
             <div class="insight-meta">
-                {exp_tag}{cat_tag}{sent_tag}{feat_tag}{proj_html}
+                {exp_tag}{cat_tag}{feat_tag}{proj_html}
                 {byline_html}
             </div>
         </div>
@@ -710,7 +714,7 @@ def render_card(row, rank=None):
         </div>
         {quotes_html}
         <div class="insight-meta">
-            {exp_tag}{cat_tag}{sent_tag}{feat_tag}{proj_html}
+            {exp_tag}{cat_tag}{feat_tag}{proj_html}
             {byline_html}
         </div>
     </div>
@@ -1040,7 +1044,7 @@ with tab2:
 
         # ── Row 7: All insights filtered feed ────────────────────────────────
         st.markdown('<div class="section-header" style="margin-top:24px"><div class="section-title">All Insights</div></div>', unsafe_allow_html=True)
-        fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 1])
+        fc1, fc2, fc3 = st.columns([2, 2, 1])
         with fc1:
             exp_filter = st.multiselect("Experience",
                 sorted(df['experience_tag'].dropna().unique().tolist()),
@@ -1050,16 +1054,11 @@ with tab2:
                 sorted(df['category_tag'].dropna().unique().tolist()),
                 default=sorted(df['category_tag'].dropna().unique().tolist()), key="intel_cat")
         with fc3:
-            sent_filter = st.multiselect("Sentiment", ['positive','negative','neutral'],
-                default=['positive','negative','neutral'], key="intel_sent") if 'sentiment' in df.columns else []
-        with fc4:
             feat_only = st.checkbox("Featured only", value=False, key="intel_feat")
 
         filtered = df.copy()
         if exp_filter:  filtered = filtered[filtered['experience_tag'].isin(exp_filter)]
         if cat_filter:  filtered = filtered[filtered['category_tag'].isin(cat_filter)]
-        if sent_filter and 'sentiment' in filtered.columns:
-            filtered = filtered[filtered['sentiment'].isin(sent_filter)]
         if feat_only:   filtered = filtered[filtered['featured'] == True]
 
         st.markdown(f'<div style="font-size:11px;color:#444;margin-bottom:14px">{len(filtered)} results</div>', unsafe_allow_html=True)
