@@ -493,16 +493,39 @@ def get_week_options(df):
     return weeks
 
 
+# ── Inline styles ─────────────────────────────────────────────────────────────
+S = {
+    'card':         'background:#141414;border:1px solid #1E1E1E;border-left:3px solid #333;padding:18px 22px;margin-bottom:10px;',
+    'card_featured':'background:#141414;border:1px solid #1E1E1E;border-left:3px solid #C41E3A;padding:18px 22px;margin-bottom:10px;',
+    'rank':         'font-size:11px;color:#C41E3A;letter-spacing:0.1em;margin-bottom:8px;font-family:serif;',
+    'top':          'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:10px;',
+    'rec':          'font-size:15px;font-weight:600;color:#FFFFFF;line-height:1.6;flex:1;',
+    'link':         'font-size:10px;color:#C41E3A;text-decoration:none;white-space:nowrap;padding-top:4px;letter-spacing:0.08em;',
+    'context':      'font-size:13px;color:#999;line-height:1.8;margin:10px 0 14px 0;padding:12px 16px;background:#0D0D0D;border-left:2px solid #C41E3A;',
+    'quotes':       'margin:10px 0 14px 0;padding-left:16px;border-left:2px solid #2A2A2A;',
+    'quote':        'font-size:12px;color:#777;font-style:italic;line-height:1.6;margin-bottom:6px;',
+    'bullet':       'font-size:12px;color:#777;line-height:1.6;margin-bottom:5px;padding-left:4px;',
+    'source_q':     'font-size:12px;color:#555;font-style:italic;line-height:1.6;margin-bottom:5px;padding-left:12px;border-left:2px solid #222;',
+    'meta':         'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #1E1E1E;',
+    'tag_base':     'font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border-radius:2px;',
+    'tag_exp':      'background:#1E1E1E;color:#888;border:1px solid #333;',
+    'tag_cat':      'background:#1A1A1A;color:#666;border:1px solid #2A2A2A;',
+    'tag_proj':     'background:#1A0A0A;color:#C41E3A;border:1px solid #3A1A1A;',
+    'tag_feat':     'background:#C41E3A;color:#FFF;',
+    'byline':       'margin-left:auto;font-size:10px;color:#444;white-space:nowrap;',
+    'upvote':       'color:#C41E3A;font-weight:600;',
+}
+
 # ── Render card ───────────────────────────────────────────────────────────────
 def render_card(row, rank=None):
-    featured_class = "featured" if row.get('featured') else ""
-    is_high_tier   = float(row.get('upvote_percentile', 0) or 0) >= 75
+    is_high_tier = float(row.get('upvote_percentile', 0) or 0) >= 75
+    card_style   = S['card_featured'] if row.get('featured') else S['card']
 
-    rank_html = f'<div class="insight-number">#{rank}</div>' if rank else ""
+    rank_html = f'<div style="{S["rank"]}">#{rank}</div>' if rank else ""
 
-    exp_tag  = f'<span class="tag tag-experience">{row.get("experience_tag","—")}</span>'
-    cat_tag  = f'<span class="tag tag-category">{str(row.get("category_tag","—")).replace("_"," ").title()}</span>'
-    feat_tag = '<span class="tag tag-featured">◆ Featured</span>' if row.get('featured') else ""
+    exp_tag  = f'<span style="{S["tag_base"]}{S["tag_exp"]}">{row.get("experience_tag","—")}</span>'
+    cat_tag  = f'<span style="{S["tag_base"]}{S["tag_cat"]}">{str(row.get("category_tag","—")).replace("_"," ").title()}</span>'
+    feat_tag = f'<span style="{S["tag_base"]}{S["tag_feat"]}">◆ Featured</span>' if row.get('featured') else ""
 
     proj_html = ""
     raw_proj = row.get('project_tags')
@@ -515,11 +538,11 @@ def render_card(row, rank=None):
             projects = []
         for p in projects:
             if p:
-                proj_html += f'<span class="tag tag-project">{p}</span>'
+                proj_html += f'<span style="{S["tag_base"]}{S["tag_proj"]}">{p}</span>'
 
     link_html = ""
     if row.get('comment_url'):
-        link_html = f'<a class="insight-link" href="{row["comment_url"]}" target="_blank">View source →</a>'
+        link_html = f'<a style="{S["link"]}" href="{row["comment_url"]}" target="_blank">View source →</a>'
 
     byline_parts = []
     if row.get('username'):
@@ -534,14 +557,14 @@ def render_card(row, rank=None):
         except:
             pass
     upvotes     = int(row.get('upvotes', 0) or 0)
-    upvote_html = f'<span class="upvote-count">▲ {upvotes:,}</span>'
+    upvote_html = f'<span style="{S["upvote"]}">▲ {upvotes:,}</span>'
     byline_str  = " · ".join(byline_parts)
-    byline_html = f'<span class="insight-byline">{byline_str} &nbsp; {upvote_html}</span>'
+    byline_html = f'<span style="{S["byline"]}">{byline_str} &nbsp; {upvote_html}</span>'
 
     if is_high_tier:
         context_html = ""
         if row.get('context_paragraph'):
-            context_html = f'<div class="context-paragraph">{row["context_paragraph"]}</div>'
+            context_html = f'<div style="{S["context"]}">{row["context_paragraph"]}</div>'
 
         quotes_html = ""
         raw_sq = row.get('supporting_quotes')
@@ -553,19 +576,19 @@ def render_card(row, rank=None):
             else:
                 sq_list = []
             if sq_list:
-                bullets = "".join([f'<div class="support-quote">"{q}"</div>' for q in sq_list[:3]])
-                quotes_html = f'<div class="support-quotes">{bullets}</div>'
+                bullets = "".join([f'<div style="{S["quote"]}">"{q}"</div>' for q in sq_list[:3]])
+                quotes_html = f'<div style="{S["quotes"]}">{bullets}</div>'
 
         st.markdown(f"""
-        <div class="insight-card featured">
+        <div style="{card_style}">
             {rank_html}
-            <div class="insight-top">
-                <div class="insight-recommendation">{row.get('recommendation','—')}</div>
+            <div style="{S['top']}">
+                <div style="{S['rec']}">{row.get('recommendation','—')}</div>
                 {link_html}
             </div>
             {context_html}
             {quotes_html}
-            <div class="insight-meta">
+            <div style="{S['meta']}">
                 {exp_tag}{cat_tag}{feat_tag}{proj_html}
                 {byline_html}
             </div>
@@ -575,21 +598,19 @@ def render_card(row, rank=None):
     else:
         detail_html = ""
         if row.get('context_bullet'):
-            detail_html += f'<div class="standard-bullet">→ {row["context_bullet"]}</div>'
+            detail_html += f'<div style="{S["bullet"]}">→ {row["context_bullet"]}</div>'
         if row.get('source_quote'):
-            detail_html += f'<div class="standard-bullet standard-quote">"{row["source_quote"]}"</div>'
-        if detail_html:
-            detail_html = f'<div class="standard-details">{detail_html}</div>'
+            detail_html += f'<div style="{S["source_q"]}">"{row["source_quote"]}"</div>'
 
         st.markdown(f"""
-        <div class="insight-card {featured_class}">
+        <div style="{card_style}">
             {rank_html}
-            <div class="insight-top">
-                <div class="insight-recommendation">{row.get('recommendation','—')}</div>
+            <div style="{S['top']}">
+                <div style="{S['rec']}">{row.get('recommendation','—')}</div>
                 {link_html}
             </div>
             {detail_html}
-            <div class="insight-meta">
+            <div style="{S['meta']}">
                 {exp_tag}{cat_tag}{feat_tag}{proj_html}
                 {byline_html}
             </div>
