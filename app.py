@@ -43,6 +43,19 @@ section[data-testid="stSidebar"] { display: none; }
     max-width: 100% !important;
 }
 
+/* ── Page wrapper for centering content ── */
+.content-area {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+}
+
+/* Force streamlit columns inside content-area to respect width */
+.content-area .stColumns, 
+.content-area [data-testid="column"] {
+    min-width: 0;
+}
+
 /* ── Header ── */
 .elias-header {
     background: #111111;
@@ -133,9 +146,6 @@ section[data-testid="stSidebar"] { display: none; }
 
 .stTabs [data-baseweb="tab-highlight"],
 .stTabs [data-baseweb="tab-border"] { display: none !important; }
-
-/* ── Content ── */
-.content-area { padding: 32px 160px; }
 
 /* ── Week selector ── */
 .week-label {
@@ -402,7 +412,6 @@ raw_count = load_raw_count()
 if not df.empty:
     total       = len(df)
     featured    = len(df[df['featured'] == True]) if 'featured' in df.columns else 0
-    avg_score   = round(df['insight_quality_score'].mean(), 1) if 'insight_quality_score' in df.columns else 0
     signal_rate = round((total / raw_count * 100), 1) if raw_count > 0 else 0
 
     st.markdown(f"""
@@ -415,11 +424,6 @@ if not df.empty:
         <div class="metric-item">
             <div class="metric-value">{featured}</div>
             <div class="metric-label">Featured</div>
-        </div>
-        <div class="metric-divider"></div>
-        <div class="metric-item">
-            <div class="metric-value">{avg_score}</div>
-            <div class="metric-label">Avg Quality</div>
         </div>
         <div class="metric-divider"></div>
         <div class="metric-item">
