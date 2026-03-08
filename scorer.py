@@ -387,6 +387,7 @@ def process_unscored_comments():
         page += 1
         print(f"  Fetched {len(all_comments)} so far...")
     comments = all_comments
+    total = len(comments)
     print(f"Found {total} unprocessed comments\n")
 
     if not comments:
