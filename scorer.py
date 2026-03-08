@@ -371,13 +371,22 @@ def calculate_percentile(upvotes, all_upvotes):
 def process_unscored_comments():
     print("\nPulling unprocessed comments...")
 
-    result = supabase.table("raw_comments")\
-        .select("*")\
-        .eq("processed", False)\
-        .execute()
-
-    comments = result.data
-    total = len(comments)
+     all_comments = []
+    page = 0
+    page_size = 1000
+    while True:
+        result = supabase.table("raw_comments")\
+            .select("*")\
+            .eq("processed", False)\
+            .range(page * page_size, (page + 1) * page_size - 1)\
+            .execute()
+        batch = result.data
+        if not batch:
+            break
+        all_comments.extend(batch)
+        page += 1
+        print(f"  Fetched {len(all_comments)} so far...")
+    comments = all_comments
     print(f"Found {total} unprocessed comments\n")
 
     if not comments:
