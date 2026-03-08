@@ -500,12 +500,25 @@ def html_to_readable(s):
     """Turn stored HTML or escaped text into plain readable text for display."""
     if s is None or (isinstance(s, float) and pd.isna(s)):
         return ""
+    # Handle dict/list (e.g. from JSONB from Supabase)
+    if isinstance(s, (dict, list)):
+        s = str(s)
     s = str(s).strip()
     if not s:
         return ""
-    s = html_module.unescape(s)
+    # Unescape repeatedly in case of double-encoding (e.g. &amp;lt; from API)
+    for _ in range(5):
+        prev = s
+        s = html_module.unescape(s)
+        if s == prev:
+            break
+    # Literal backslash-n in string → real newline
+    s = s.replace("\\n", "\n").replace("\\r", "")
+    # Strip HTML tags (including multiline and attributes)
     s = re.sub(r'<[^>]+>', '', s)
-    return s.strip()
+    # Collapse multiple spaces/newlines to one space for plain display
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 
 def safe_display(s, default="—"):
@@ -604,7 +617,7 @@ def render_card(row, rank=None):
                 bullets = "".join([f'<div style="{S["quote"]}">"{safe_display(q)}"</div>' for q in sq_list[:3]])
                 quotes_html = f'<div style="{S["quotes"]}">{bullets}</div>'
 
-        st.markdown(f"""
+        card_html = f"""
         <div style="{card_style}">
             {rank_html}
             <div style="{S['top']}">
@@ -618,7 +631,11 @@ def render_card(row, rank=None):
                 {byline_html}
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+        try:
+            st.html(card_html)
+        except AttributeError:
+            st.markdown(card_html, unsafe_allow_html=True)
 
     else:
         detail_html = ""
@@ -627,7 +644,7 @@ def render_card(row, rank=None):
         if row.get('source_quote'):
             detail_html += f'<div style="{S["source_q"]}">"{safe_display(row["source_quote"])}"</div>'
 
-        st.markdown(f"""
+        card_html = f"""
         <div style="{card_style}">
             {rank_html}
             <div style="{S['top']}">
@@ -640,7 +657,11 @@ def render_card(row, rank=None):
                 {byline_html}
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+        try:
+            st.html(card_html)
+        except AttributeError:
+            st.markdown(card_html, unsafe_allow_html=True)
 
 
 # ── Executive summary ─────────────────────────────────────────────────────────
