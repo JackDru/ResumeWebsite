@@ -491,6 +491,12 @@ def load_insights():
         for col in ['date_posted', 'date_added']:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
+        # Deduplicate by raw_comment_id — keep the highest weighted_score row
+        # This cleans up any duplicate inserts that slipped through before the
+        # Supabase unique constraint was added
+        if 'raw_comment_id' in df.columns:
+            df = df.sort_values('weighted_score', ascending=False)
+            df = df.drop_duplicates(subset='raw_comment_id', keep='first')
         return df
     return pd.DataFrame()
 
@@ -853,26 +859,34 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-        seen_ids    = set()
-        seen_recs   = set()
+        seen_ids     = set()   # insight row IDs
+        seen_raw_ids = set()   # raw_comment_ids — ground-truth dedup
+        seen_recs    = set()   # recommendation text — catches paraphrase dupes
         rank_counter = 1
 
         for _, row in week_df.iterrows():
             if rank_counter > 5:
                 break
 
-            # Deduplicate by row ID
-            row_id = row.get('id') or row.get('raw_comment_id')
-            if row_id in seen_ids:
+            # 1. Deduplicate by insight row ID
+            row_id = row.get('id')
+            if row_id and row_id in seen_ids:
                 continue
-            seen_ids.add(row_id)
+            if row_id:
+                seen_ids.add(row_id)
 
-            # Deduplicate by recommendation text (normalised lowercase)
+            # 2. Deduplicate by raw_comment_id — same source comment, different paraphrase
+            raw_comment_id = row.get('raw_comment_id')
+            if raw_comment_id and raw_comment_id in seen_raw_ids:
+                continue
+            if raw_comment_id:
+                seen_raw_ids.add(raw_comment_id)
+
+            # 3. Deduplicate by recommendation text (normalised lowercase)
             raw_rec  = str(row.get('recommendation', '') or '')
             raw_rec  = html_module.unescape(raw_rec)
             rec_text = re.sub(r'<[^>]+>', '', raw_rec).strip()
             rec_key  = re.sub(r'\s+', ' ', rec_text.lower()).strip()
-
             if rec_key in seen_recs:
                 continue
             seen_recs.add(rec_key)

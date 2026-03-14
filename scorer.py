@@ -172,6 +172,8 @@ def infer_experience(subreddit, content, post_title):
         return "WDW"
     return "WDW"
 
+
+# ── PASS 1: Initial scoring ───────────────────────────────────────────────────
 def score_batch(comments, high_tier=False):
     comment_list = ""
     for i, c in enumerate(comments):
@@ -237,8 +239,9 @@ You are a senior strategy analyst briefing Disney's executive leadership.
 Your job is to find comments containing intelligence that would change
 what a Disney VP does on Monday morning.
 
-You are extremely selective. You are looking for 1 in 20 comments at most.
+You are extremely selective. You are looking for 1 in 30 comments at most.
 Most comments — even interesting, high-upvote ones — do not qualify.
+When in doubt, the answer is always reject.
 
 THE CORE TEST — ask this before approving any comment:
 "If I showed this to a Disney VP, would they know exactly what
@@ -263,19 +266,21 @@ HARD DISQUALIFIERS — reject instantly if any are true:
    reject it. These mean the comment lacks enough specificity to be
    actionable. A real finding has a real fix, not a study.
 
-4. OBVIOUS: Disney already knows this and tracks it. Long wait times exist.
-   Parks are crowded. Food is expensive. Cast members are sometimes rude.
-   These are known. Reject unless the comment reveals the specific cause,
-   location, time, or system failure that Disney may not have isolated.
+4. GENERIC: The finding contains no specific detail that couldn't be
+   written by someone who has never visited. If it could appear in any
+   generic theme park review — reject it. Specificity is required:
+   a named attraction, a named system, a named location, a specific time
+   or date pattern, or a specific staff role.
 
-5. ONE-TIME INCIDENT: A single bad experience with no indication it is
-   systemic, recurring, or structural. One broken animatronic sighted once
-   is not intelligence. Multiple guests reporting the same broken animatronic
-   across several visits is.
+5. ONE-TIME INCIDENT: A single bad experience with no signal it is
+   systemic. One broken animatronic seen once is not intelligence.
+   Reject unless the comment contains language suggesting recurrence:
+   "every time", "always", "still broken", "third visit", "multiple
+   people", "everyone was", or similar pattern indicators.
 
 6. NO CLEAR FIX: The problem described has no operational solution Disney
    could implement. Reject if you cannot write a concrete action verb
-   recommendation that names a specific change.
+   recommendation that names a specific change at a specific location.
 
 WHAT QUALIFIES — all must be true:
 - Names a specific system, location, attraction, or staff role
@@ -283,6 +288,7 @@ WHAT QUALIFIES — all must be true:
 - There is a concrete fix Disney could implement
 - The recommendation can start with a real action verb naming the fix
 - A Disney ops manager would know exactly what to go look at
+- Contains detail that could not be inferred without this specific comment
 
 CATEGORY — assign exactly one:
 - imagineering: Specific new creative concept that does not exist yet
@@ -319,8 +325,9 @@ Comments to analyze:
 {comment_list}
 
 Return ONLY the JSON array. No preamble, no markdown, no explanation.
-Expect to mark most comments is_insightful: false.
+Expect to mark the vast majority of comments is_insightful: false.
 You are looking for genuine operational intelligence, not interesting stories.
+When in doubt — reject.
 """
 
     for attempt in range(3):
@@ -339,11 +346,90 @@ You are looking for genuine operational intelligence, not interesting stories.
                 time.sleep(2)
     return None
 
+
+# ── PASS 2: Rejection filter ──────────────────────────────────────────────────
+def second_pass_filter(comment, score):
+    """
+    Re-evaluates a single comment that passed Pass 1.
+    Asks a harder adversarial question: find the reason to reject this.
+    Returns True if the comment survives (still insightful), False if rejected.
+    """
+    prompt = f"""
+You are a brutally skeptical editor reviewing an insight that a junior
+analyst flagged as actionable for Disney's executive team.
+
+Your job is to find the reason to REJECT it. You are looking for any of
+these failure modes:
+
+1. VIRAL STORY THAT SLIPPED THROUGH: It passed because it has a specific
+   location or action verb, but the underlying reason it got upvotes is
+   that it is entertaining or relatable — not operationally useful.
+
+2. ANECDOTE DRESSED AS PATTERN: It uses specific language but describes
+   a single personal experience. There is no evidence this is systemic.
+   One person's bad experience is not a Disney operations problem.
+
+3. RECOMMENDATION IS HOLLOW: The action verb recommendation sounds
+   concrete but actually just restates the complaint. A real recommendation
+   must describe a change to a system, process, staffing model, or physical
+   space — not just "fix the thing that was broken."
+
+4. ALREADY OBVIOUS: Disney leadership unambiguously already knows and
+   tracks this. Every park operator knows queues back up at closing.
+   Every hotel knows check-in can be slow. Reject if there is nothing
+   here a Disney VP would not already have in their weekly ops report.
+
+5. VAGUE DESPITE APPEARING SPECIFIC: It names a location but the actual
+   problem and fix are generic. "Space Mountain queue needs better
+   signage" could apply to any attraction at any theme park anywhere.
+
+The original comment:
+{comment['content'][:600]}
+
+The analyst's proposed recommendation:
+{score.get('recommendation', '')}
+
+The analyst's reasoning (context):
+{score.get('context_paragraph') or score.get('context_bullet') or ''}
+
+Respond with ONLY a JSON object:
+{{
+  "survives": true or false,
+  "rejection_reason": "one sentence explaining why it was rejected, or null if it survives"
+}}
+
+Return ONLY the JSON. No preamble, no explanation.
+Default to rejecting — only mark survives: true if you genuinely cannot
+find a valid reason to reject it.
+"""
+
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200
+            )
+            text = response.choices[0].message.content.strip()
+            text = text.replace("```json", "").replace("```", "").strip()
+            result = json.loads(text)
+            return result.get("survives", False), result.get("rejection_reason")
+        except Exception as e:
+            print(f"  Pass 2 attempt {attempt+1} failed: {e}")
+            if attempt < 2:
+                time.sleep(2)
+
+    # If pass 2 fails entirely, default to keeping the insight
+    # (better to let one through than silently lose data)
+    return True, None
+
+
 def calculate_percentile(upvotes, all_upvotes):
     if not all_upvotes:
         return 50.0
     rank = sum(u <= upvotes for u in all_upvotes)
     return round((rank / len(all_upvotes)) * 100, 1)
+
 
 def process_unscored_comments():
     print("\nPulling unprocessed comments...")
@@ -378,9 +464,10 @@ def process_unscored_comments():
             posts[pid] = []
         posts[pid].append(c)
 
-    insights_found  = 0
-    processed_count = 0
-    batch_size      = 20
+    insights_found   = 0
+    pass2_rejected   = 0
+    processed_count  = 0
+    batch_size       = 20
 
     for post_id, post_comments in posts.items():
         all_upvotes = [c.get('upvotes', 0) or 0 for c in post_comments]
@@ -432,42 +519,65 @@ def process_unscored_comments():
                 content    = comment.get('content', '')
 
                 if not score.get('is_insightful'):
-                    print(f"  discarded")
+                    print(f"  discarded (pass 1)")
+
                 else:
-                    experience   = infer_experience(subreddit, content, post_title)
-                    project_tags = assign_project_tags(content, post_title)
-                    percentile   = get_percentile(comment.get('upvotes', 0) or 0)
-                    featured     = percentile >= 75
-                    weighted     = max(comment.get('upvotes', 0) or 0, 1)
-                    tier_label   = "HIGH" if is_high else "STD"
+                    # ── PASS 2: adversarial rejection filter ──────────────────
+                    survives, rejection_reason = second_pass_filter(comment, score)
 
-                    print(f"  ✓ [{tier_label}] {score['category']} | {score.get('recommendation','')[:80]}...")
+                    if not survives:
+                        pass2_rejected += 1
+                        print(f"  ✗ [pass 2 rejected] {rejection_reason}")
 
-                    try:
-                        supabase.table("insights").insert({
-                            "raw_comment_id":        comment['id'],
-                            "experience_tag":        experience,
-                            "category_tag":          score['category'],
-                            "recommendation":        score.get('recommendation'),
-                            "context_paragraph":     score.get('context_paragraph'),
-                            "context_bullet":        score.get('context_bullet'),
-                            "source_quote":          score.get('source_quote'),
-                            "supporting_quotes":     score.get('supporting_quotes', []),
-                            "insight_quality_score": 10.0,
-                            "upvotes":               comment.get('upvotes', 0),
-                            "upvote_percentile":     percentile,
-                            "featured":              featured,
-                            "weighted_score":        weighted,
-                            "sentiment":             score.get('sentiment', 'neutral'),
-                            "project_tags":          project_tags,
-                            "username":              comment.get('username'),
-                            "date_posted":           comment.get('date_posted'),
-                            "comment_url":           comment.get('comment_url'),
-                            "week_number":           1
-                        }).execute()
-                        insights_found += 1
-                    except Exception as e:
-                        print(f"  Error saving: {e}")
+                    else:
+                        experience   = infer_experience(subreddit, content, post_title)
+                        project_tags = assign_project_tags(content, post_title)
+                        percentile   = get_percentile(comment.get('upvotes', 0) or 0)
+                        featured     = percentile >= 75
+                        weighted     = max(comment.get('upvotes', 0) or 0, 1)
+                        tier_label   = "HIGH" if is_high else "STD"
+
+                        print(f"  ✓ [{tier_label}] {score['category']} | {score.get('recommendation','')[:80]}...")
+
+                        # Guard: skip if this raw_comment already has an insight
+                        # (safety net before the Supabase unique constraint fires)
+                        try:
+                            existing = supabase.table("insights") \
+                                .select("id") \
+                                .eq("raw_comment_id", comment['id']) \
+                                .execute()
+                            if existing.data:
+                                print(f"  skipped (raw_comment_id already has insight)")
+                                processed_count += 1
+                                continue
+                        except Exception as e:
+                            print(f"  Dedup check error: {e} — proceeding with insert")
+
+                        try:
+                            supabase.table("insights").insert({
+                                "raw_comment_id":        comment['id'],
+                                "experience_tag":        experience,
+                                "category_tag":          score['category'],
+                                "recommendation":        score.get('recommendation'),
+                                "context_paragraph":     score.get('context_paragraph'),
+                                "context_bullet":        score.get('context_bullet'),
+                                "source_quote":          score.get('source_quote'),
+                                "supporting_quotes":     score.get('supporting_quotes', []),
+                                "insight_quality_score": 10.0,
+                                "upvotes":               comment.get('upvotes', 0),
+                                "upvote_percentile":     percentile,
+                                "featured":              featured,
+                                "weighted_score":        weighted,
+                                "sentiment":             score.get('sentiment', 'neutral'),
+                                "project_tags":          project_tags,
+                                "username":              comment.get('username'),
+                                "date_posted":           comment.get('date_posted'),
+                                "comment_url":           comment.get('comment_url'),
+                                "week_number":           1
+                            }).execute()
+                            insights_found += 1
+                        except Exception as e:
+                            print(f"  Error saving: {e}")
 
                 try:
                     supabase.table("raw_comments")\
@@ -480,14 +590,17 @@ def process_unscored_comments():
                 processed_count += 1
 
     print(f"\n{'='*50}")
-    print(f"Done. {insights_found} gems from {processed_count} comments")
+    print(f"Done. {insights_found} insights from {processed_count} comments")
+    print(f"Pass 2 rejections: {pass2_rejected}")
     if processed_count > 0:
         print(f"Signal rate: {round(insights_found/processed_count*100,1)}%")
+        if (insights_found + pass2_rejected) > 0:
+            rejection_rate = round(pass2_rejected / (insights_found + pass2_rejected) * 100, 1)
+            print(f"Pass 2 rejection rate: {rejection_rate}% of pass-1 approvals")
+
 
 process_unscored_comments()
 
-# already called once above — now keep retrying until done
-import time
 while True:
     result = supabase.table("raw_comments").select("id", count="exact").eq("processed", False).execute()
     remaining = result.count or 0
