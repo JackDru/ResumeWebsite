@@ -463,12 +463,31 @@ st.markdown("""
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=180)
 def load_insights():
-    result = supabase.table("insights")\
-        .select("*")\
-        .order("weighted_score", desc=True)\
-        .execute()
-    if result.data:
-        df = pd.DataFrame(result.data)
+    """Load all insights from Supabase, paginating past the 1000-row default limit."""
+    all_rows = []
+    page_size = 1000
+    offset = 0
+
+    while True:
+        result = supabase.table("insights") \
+            .select("*") \
+            .order("weighted_score", desc=True) \
+            .range(offset, offset + page_size - 1) \
+            .execute()
+
+        if not result.data:
+            break
+
+        all_rows.extend(result.data)
+
+        # If fewer rows than page size returned, we've hit the end
+        if len(result.data) < page_size:
+            break
+
+        offset += page_size
+
+    if all_rows:
+        df = pd.DataFrame(all_rows)
         for col in ['date_posted', 'date_added']:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
@@ -564,14 +583,11 @@ def fmt_text(s, default="—"):
     if s is None or (isinstance(s, float) and pd.isna(s)):
         return default
     text = str(s)
-    # First unescape entities like &lt; &gt; &amp;
     text = html_module.unescape(text)
-    # Strip any HTML tags
     text = re.sub(r"<[^>]+>", "", text)
     text = text.strip()
     if not text:
         return default
-    # Escape again so remaining <, &, etc. render as text
     return html_module.escape(text)
 
 
@@ -628,7 +644,6 @@ def render_card(row, rank=None):
     byline_html = f'<span class="insight-byline">{byline_str} &nbsp; {upvote_html}</span>'
 
     if is_high_tier:
-        # ── HIGH TIER: headline + context paragraph + supporting quotes ──────
         context_html = ""
         if row.get('context_paragraph'):
             para = fmt_text(row["context_paragraph"], "")
@@ -673,7 +688,6 @@ def render_card(row, rank=None):
             st.markdown(card_html, unsafe_allow_html=True)
 
     else:
-        # ── STANDARD TIER: headline + context bullet + key quote ─────────────
         detail_html = ""
         if row.get('context_bullet'):
             cb = fmt_text(row["context_bullet"], "")
@@ -723,14 +737,17 @@ def build_exec_summary(week_df, week_label):
         if all_tags:
             proj_count = Counter(all_tags)
 
-    # Top 3 by upvotes
-    top3 = week_df.sort_values('upvotes', ascending=False).head(3)
+    # Top 3 by upvotes — deduplicated by recommendation text
     top3_recs = []
-    for _, r in top3.iterrows():
+    seen_recs = set()
+    for _, r in week_df.sort_values('upvotes', ascending=False).iterrows():
         raw_rec = str(r.get('recommendation', '') or '')
-        # Unescape any HTML entities then strip tags for clean text
         raw_rec = html_module.unescape(raw_rec)
-        rec  = re.sub(r'<[^>]+>', '', raw_rec).strip()
+        rec = re.sub(r'<[^>]+>', '', raw_rec).strip()
+        rec_key = re.sub(r'\s+', ' ', rec.lower()).strip()
+        if rec_key in seen_recs:
+            continue
+        seen_recs.add(rec_key)
         upv  = int(r.get('upvotes', 0) or 0)
         cat  = str(r.get('category_tag', '')).replace('_', ' ').title()
         proj = ''
@@ -739,6 +756,8 @@ def build_exec_summary(week_df, week_label):
             if isinstance(raw_p, list) and raw_p: proj = raw_p[0]
             elif isinstance(raw_p, str): proj = raw_p.strip('{}').split(',')[0].strip().strip('"')
         top3_recs.append((rec, upv, cat, proj))
+        if len(top3_recs) >= 3:
+            break
 
     top_areas = [p for p, _ in proj_count.most_common(4)] if proj_count else []
     areas_str = ", ".join(top_areas[:4]) if top_areas else "General Disney"
@@ -781,7 +800,6 @@ with tab1:
     if df.empty:
         st.markdown('<div class="empty-state">No insights yet — run the scorer first</div>', unsafe_allow_html=True)
     else:
-        # ── Week selector ─────────────────────────────────────────────────────
         WEEK_OPTIONS = get_week_options_from_df(df)
         WEEK_LABELS  = [w[0] for w in WEEK_OPTIONS]
 
@@ -798,12 +816,10 @@ with tab1:
             label_visibility="collapsed"
         )
 
-        # Find selected week bounds
         selected_week = next((w for w in WEEK_OPTIONS if w[0] == selected_week_label), WEEK_OPTIONS[0])
         week_start = pd.Timestamp(selected_week[1], tz="UTC")
         week_end   = pd.Timestamp(selected_week[2], tz="UTC") + pd.Timedelta(hours=23, minutes=59)
 
-        # Filter insights to selected week — prefer date_added, fallback to date_posted
         date_col = None
         for c in ["date_added", "date_posted"]:
             if c in df.columns and df[c].notna().any():
@@ -814,14 +830,12 @@ with tab1:
         else:
             week_df = df.copy()
 
-        # Fallback — if no data in selected week, show all data
         if week_df.empty:
             week_df = df.copy()
             st.markdown('<div style="font-size:11px;color:#444;margin-bottom:16px;margin-top:-8px">No data found for this week — showing all available insights</div>', unsafe_allow_html=True)
 
         week_df = week_df.sort_values('weighted_score', ascending=False)
 
-        # ── Executive summary ─────────────────────────────────────────────────
         summary_html = build_exec_summary(week_df, selected_week_label)
         if summary_html:
             st.markdown(f"""
@@ -831,23 +845,38 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
 
-        # ── Top 5 recommendations ─────────────────────────────────────────────
-        top5 = week_df.head(5)
-
+        # ── Top 5 recommendations — deduplicated by recommendation text ───────
         st.markdown(f"""
         <div class="section-header">
             <div class="section-title">Top Recommendations</div>
-            <div class="section-sub">{len(top5)} highest-signal findings · {selected_week_label}</div>
+            <div class="section-sub">5 highest-signal findings · {selected_week_label}</div>
         </div>
         """, unsafe_allow_html=True)
 
-        seen_ids = set()
+        seen_ids    = set()
+        seen_recs   = set()
         rank_counter = 1
-        for _, row in top5.iterrows():
+
+        for _, row in week_df.iterrows():
+            if rank_counter > 5:
+                break
+
+            # Deduplicate by row ID
             row_id = row.get('id') or row.get('raw_comment_id')
             if row_id in seen_ids:
                 continue
             seen_ids.add(row_id)
+
+            # Deduplicate by recommendation text (normalised lowercase)
+            raw_rec  = str(row.get('recommendation', '') or '')
+            raw_rec  = html_module.unescape(raw_rec)
+            rec_text = re.sub(r'<[^>]+>', '', raw_rec).strip()
+            rec_key  = re.sub(r'\s+', ' ', rec_text.lower()).strip()
+
+            if rec_key in seen_recs:
+                continue
+            seen_recs.add(rec_key)
+
             render_card(row, rank=rank_counter)
             rank_counter += 1
 
@@ -855,7 +884,7 @@ with tab1:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — INTELLIGENCE
+# TAB 2 — GRAPHS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.markdown('<div class="content-area">', unsafe_allow_html=True)
@@ -863,7 +892,6 @@ with tab2:
     if df.empty:
         st.markdown('<div class="empty-state">No data yet</div>', unsafe_allow_html=True)
     else:
-        # ── Row 1: Sentiment donut + sentiment over time ──────────────────────
         r1c1, r1c2 = st.columns([1, 2])
 
         with r1c1:
@@ -876,7 +904,6 @@ with tab2:
                 color_list = [colors.get(s,'#444') for s in sent_counts['sentiment']]
                 fig_sent = px.pie(sent_counts, values='count', names='sentiment',
                                   color_discrete_sequence=color_list, hole=0.68)
-                # Add center annotation
                 neg_n   = int(sent_counts[sent_counts['sentiment']=='negative']['count'].sum()) if 'negative' in sent_counts['sentiment'].values else 0
                 neg_pct = round(neg_n / total_s * 100) if total_s > 0 else 0
                 fig_sent.add_annotation(text=f"<b>{neg_pct}%</b><br>negative",
@@ -914,7 +941,6 @@ with tab2:
                     st.markdown('<div style="color:#444;font-size:12px;padding:20px 0">Not enough time-series data yet.</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Row 2: Category + Experience bars ────────────────────────────────
         r2c1, r2c2 = st.columns(2)
 
         with r2c1:
@@ -948,7 +974,6 @@ with tab2:
             st.plotly_chart(fig_exp, use_container_width=True, config={'displayModeBar': False})
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Row 3: Category × Sentiment heatmap ──────────────────────────────
         if 'sentiment' in df.columns:
             st.markdown('<div class="chart-card"><div class="chart-title">Category × Sentiment Heatmap — Where Is The Pain?</div>', unsafe_allow_html=True)
             heat_df = df.groupby(['category_tag','sentiment']).size().reset_index(name='count')
@@ -972,7 +997,6 @@ with tab2:
             st.plotly_chart(fig_heat, use_container_width=True, config={'displayModeBar': False})
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Row 4: Top upvoted insights bar ───────────────────────────────────
         st.markdown('<div class="chart-card"><div class="chart-title">Top 10 Most Community-Validated Insights</div>', unsafe_allow_html=True)
         top_upv = df.nlargest(10, 'upvotes')[['recommendation','upvotes','category_tag']].copy()
         top_upv['short'] = top_upv['recommendation'].str[:60] + '...'
@@ -991,9 +1015,7 @@ with tab2:
         st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Row 5: Subreddit source breakdown ────────────────────────────────
         st.markdown('<div class="chart-card"><div class="chart-title">Source Subreddit Breakdown</div>', unsafe_allow_html=True)
-        # Pull from raw_comments for full picture
         try:
             raw_result = supabase.table("raw_comments").select("subreddit").execute()
             if raw_result.data:
@@ -1014,7 +1036,6 @@ with tab2:
             st.markdown(f'<div style="color:#444;font-size:12px">Could not load subreddit data: {e}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── Row 6: Category drift ────────────────────────────────────────────
         st.markdown('<div class="chart-card"><div class="chart-title">Category Drift — This Week vs Prior Period</div>', unsafe_allow_html=True)
         if 'date_added' in df.columns and df['date_added'].notna().any():
             now         = pd.Timestamp.now(tz='UTC')
@@ -1059,7 +1080,7 @@ with tab2:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — PROJECTS
+# TAB 3 — SEARCH
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.markdown('<div class="content-area">', unsafe_allow_html=True)
@@ -1067,7 +1088,6 @@ with tab3:
     if df.empty:
         st.markdown('<div class="empty-state">No data yet</div>', unsafe_allow_html=True)
     else:
-        # ── Search bar ────────────────────────────────────────────────────────
         st.markdown('<div class="week-label">Search Insights</div>', unsafe_allow_html=True)
         search_query = st.text_input(
             "Search",
@@ -1081,12 +1101,10 @@ with tab3:
                 return df.copy()
             q = query.lower().strip()
             mask = pd.Series([False] * len(df), index=df.index)
-            # Search across all text fields
             for col in ['recommendation', 'source_quote', 'category_tag',
                         'experience_tag', 'username', 'post_title']:
                 if col in df.columns:
                     mask |= df[col].astype(str).str.lower().str.contains(q, na=False)
-            # Search inside project_tags
             if 'project_tags' in df.columns:
                 def tag_match(val):
                     if not val: return False
@@ -1094,7 +1112,6 @@ with tab3:
                         return any(q in str(t).lower() for t in val)
                     return q in str(val).lower()
                 mask |= df['project_tags'].apply(tag_match)
-            # Search inside supporting_quotes
             if 'supporting_quotes' in df.columns:
                 def sq_match(val):
                     if not val: return False
@@ -1106,7 +1123,6 @@ with tab3:
 
         search_results = search_insights(df, search_query)
 
-        # Result count + sort
         rc1, rc2 = st.columns([3, 1])
         with rc1:
             if search_query:
