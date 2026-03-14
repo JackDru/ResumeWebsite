@@ -855,7 +855,7 @@ with tab1:
         st.markdown(f"""
         <div class="section-header">
             <div class="section-title">Top Recommendations</div>
-            <div class="section-sub">5 highest-signal findings · {selected_week_label}</div>
+            <div class="section-sub">20 highest-signal findings · {selected_week_label}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -871,7 +871,7 @@ with tab1:
         rank_counter = 1
 
         for _, row in week_df.iterrows():
-            if rank_counter > 5:
+            if rank_counter > 20:
                 break
 
             # 1. Deduplicate by insight row ID
