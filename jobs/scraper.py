@@ -96,6 +96,23 @@ SEARCH_TERMS = [
     "they removed",
     "corporate decision",
     "feels different",
+    # Question and nostalgia style
+    "what happened to",
+    "does anyone remember",
+    "used to have",
+    "when did they remove",
+    "is it still",
+    "did they fix",
+    "anyone notice",
+    "am I the only one",
+    "remember when",
+    "they got rid of",
+    "where did they go",
+    "what ever happened",
+    "still broken",
+    "never fixed",
+    "years ago",
+
 ]
 
 HEADERS = {

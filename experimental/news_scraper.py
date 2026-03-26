@@ -1,3 +1,8 @@
+"""
+Optional WDWNT article scraper — not part of the weekly Reddit pipeline.
+Requires: pip install beautifulsoup4
+Run from repo root: python experimental/news_scraper.py
+"""
 import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
@@ -75,4 +80,6 @@ def scrape_wdwnt():
     
     print(f"\nSaved {comments_saved} paragraphs to Supabase")
 
-scrape_wdwnt()
+
+if __name__ == "__main__":
+    scrape_wdwnt()
