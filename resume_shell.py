@@ -311,7 +311,7 @@ def render_home_hero() -> None:
   <p>
     I build systems that turn noisy data into decisions executives can act on.
     This site summarizes my background and selected work, including analytics application
-    (<strong style="color: inherit;">Elias</strong>) that structures guest feedback for reporting and search for Disney Experiences. I plan to build more tools to solver business problems as I grow my skills.
+    (<strong style="color: inherit;">Elias</strong>) that structures guest feedback for reporting and search for Disney Experiences. I plan to build more tools to solve business problems as I grow my skills.
   </p>
 </div>
 """,
