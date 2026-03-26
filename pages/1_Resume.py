@@ -1,4 +1,3 @@
-import base64
 from pathlib import Path
 
 import streamlit as st
@@ -16,6 +15,7 @@ render_portfolio_chrome(show_hero=False)
 
 ROOT = Path(__file__).resolve().parent.parent
 PDF_PATH = ROOT / "assets" / "resume.pdf"
+RESUME_PUBLIC_URL = "https://raw.githubusercontent.com/JackDru/ResumeWebsite/main/assets/resume.pdf"
 
 st.markdown(
     """
@@ -40,11 +40,13 @@ if PDF_PATH.is_file():
         type="primary",
         use_container_width=True,
     )
-
-    b64 = base64.b64encode(pdf_bytes).decode()
-    st.markdown(
-        f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="900px" type="application/pdf"></iframe>',
-        unsafe_allow_html=True,
+    st.link_button(
+        "Open resume in browser",
+        RESUME_PUBLIC_URL,
+        use_container_width=True,
+    )
+    st.caption(
+        "If your browser blocks inline PDF previews, use the open/download buttons above."
     )
 else:
     st.warning(
