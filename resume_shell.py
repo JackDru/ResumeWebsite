@@ -307,11 +307,11 @@ def render_home_hero() -> None:
         """
 <div class="portfolio-hero">
   <h1>Jack Druyon</h1>
-  <div class="role">Analytics · Engineering · Operations</div>
+  <div class="role">Finance · Analytics · AI Automation · Problem Solving · Communication</div>
   <p>
-    I build systems that turn noisy operational and community signals into decisions executives can act on.
-    This site summarizes my background and selected work, including a production analytics application
-    (<strong style="color: inherit;">Elias</strong>) that structures guest feedback for reporting and search.
+    I build systems that turn noisy data into decisions executives can act on.
+    This site summarizes my background and selected work, including analytics application
+    (<strong style="color: inherit;">Elias</strong>) that structures guest feedback for reporting and search for Disney Experiences. I plan to build more tools to solver business problems as I grow my skills.
   </p>
 </div>
 """,
