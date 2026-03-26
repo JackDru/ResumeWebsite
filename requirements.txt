@@ -4,3 +4,5 @@ plotly
 python-dotenv
 requests
 anyio==4.3.0
+beautifulsoup4
+openai
